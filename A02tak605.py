@@ -1,3 +1,4 @@
+import time
 class Sudoku:
     def __init__(self, size, values):
         rank_map = {
@@ -41,13 +42,30 @@ class Sudoku:
     def unassign_cell(self, cell):
         row, col = cell
         self.board[row][col] = 0
+
+    # --- MRV additions (minimal) ---
+    def legal_values(self, pos):
+        """Return only values consistent with current board at pos."""
+        return [v for v in self.get_domain_values_by_pos(pos) if self.is_consistent(pos, v)]
     
     def select_unassigned_cell(self):
+        """
+        MRV: choose an empty cell with the smallest number of legal values.
+        Ties are left as-is to keep changes minimal.
+        """
+        best = None
+        best_len = float("inf")
         for row in range(self.rank**2):
             for col in range(self.rank**2):
                 if self.board[row][col] == 0:
-                    return (row,col)
-        return None
+                    lv = self.legal_values((row, col))
+                    if len(lv) < best_len:
+                        best = (row, col)
+                        best_len = len(lv)
+                        if best_len == 1:  # quick exit if only one choice
+                            return best
+        return best
+    # --- end MRV additions ---
     
     def print(self):
         for row in range(self.rank**2):
@@ -114,11 +132,10 @@ def recursive_backtracking(board):
 
     cell = board.select_unassigned_cell() # cell is tuple (row_idx, col_idx)
     
-    for value in board.get_domain_values_by_pos(cell):
-        if board.is_consistent(cell, value):
-            board.assign_cell(cell, value)
-            if recursive_backtracking(board):
-                return True # return Success
+    for value in board.legal_values(cell):
+        board.assign_cell(cell, value)
+        if recursive_backtracking(board):
+            return True # return Success
 
         # remove var from assignment
         board.unassign_cell(cell)
@@ -159,7 +176,10 @@ def run():
     # board.pprint()
     
     print("The solution is")
+    start = time.perf_counter()
     backtracking(board)
+    end = time.perf_counter()
+    print(f"Total time {end - start}")
 
 if __name__ == "__main__":
     run()
