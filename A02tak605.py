@@ -1,12 +1,4 @@
-class Problem:
-    def __init__(self, board):
-        self.board = board
-        
-    def is_goal(self):
-        return self.board.is_complete()
-    
-
-class SudoKuBoard:
+class Sudoku:
     def __init__(self, size, values):
         rank_map = {
             "4x4" : 2,
@@ -32,6 +24,9 @@ class SudoKuBoard:
             board.append(row)
         return board
 
+    def is_complete(self):
+        return not self.has_unassinged_cell()
+
     def has_unassinged_cell(self):
         for row in range(self.rank**2):
             for col in range(self.rank**2):
@@ -42,8 +37,12 @@ class SudoKuBoard:
     def assign_cell(self, cell, value):
         row, col = cell
         self.board[row][col] = value
+
+    def unassign_cell(self, cell):
+        row, col = cell
+        self.board[row][col] = 0
     
-    def next_unassigned_cell(self):
+    def select_unassigned_cell(self):
         for row in range(self.rank**2):
             for col in range(self.rank**2):
                 if self.board[row][col] == 0:
@@ -65,95 +64,74 @@ class SudoKuBoard:
                 print(f"{value_str}",end="|")
             print()
             print(f"-----" * self.rank**2)
-    # def is_valid(self):
-    #     for row in range(self.rank**2):
-    #         for col in range(self.rank**2):
-    #             if not self.is_valid_cell((row,col)):
-    #                 return False
-                
-    #     return True
 
-    def is_valid_cell(self, pos):
-        cell_row, cell_col = pos
-        cell_value = self.board[cell_row][cell_col]
+    def get_value(self, pos):
+        row, col = pos
+        return self.board[row][col]
 
-        if cell_value == 0:
-            return False
+    def get_row_values_by_pos(self,pos):
+        r_idx, c_idx = pos
+        return [ x for x in self.board[r_idx]]
+    
+    def get_col_values_by_pos(self, pos):
+        r_idx, c_idx = pos
+        values = []
+        for row in self.board:
+            values.append(row[c_idx])
+        return values
+    
+    def get_region_values_by_pos(self, pos):
+        r_idx, c_idx = pos
+        values = []
+        r_start = r_idx - r_idx % self.rank
+        c_start = c_idx - c_idx % self.rank
+        for r in range(r_start, r_start + self.rank):
+            for c in range(c_start, c_start + self.rank):
+                values.append(self.board[r][c])
+        return values
+    
+    def get_domain_values_by_pos(self, pos):
+        return [ x+1 for x in range(self.rank**2) ]
 
-        for col_idx in range(self.rank**2):
-            if cell_col == col_idx:
-                continue
-            if self.board[cell_row][col_idx] == cell_value:
+    def is_consistent(self, pos, value):
+        for v in self.get_row_values_by_pos(pos):
+            if v == value:
                 return False
             
-        for row_idx in range(self.rank**2):
-            if row_idx == cell_row:
-                continue
-            if self.board[row_idx][cell_col] == cell_value:
+        for v in self.get_col_values_by_pos(pos):
+            if v == value:
+                return False
+            
+        for v in self.get_region_values_by_pos(pos):
+            if v == value:
                 return False
         
-        r_start = cell_row - cell_row % self.rank
-        c_start = cell_col - cell_col % self.rank
-        for row_idx in range(r_start, r_start + self.rank):
-            for col_idx in range(c_start, c_start + self.rank):
-                if (row_idx, col_idx) == pos:
-                    continue
-                if self.board[row_idx][col_idx] == cell_value:
-                    return False
         return True
-
-
-        # for row in range(self.rank**2):
-        #     seen = set()
-        #     for col in range(self.rank**2):
-        #         value = self.board[row][col]
-        #         if not value:
-        #             continue
-        #         if value in seen:
-        #             return False
-        #         seen.add(value)
-
-        # for col in range(self.rank**2):
-        #     seen = set()
-        #     for row in range(self.rank**2):
-        #         value = self.board[row][col]
-        #         if not value:
-        #             continue
-        #         if value in seen:
-        #             return False
-        #         seen.add(value)
-
-        # for quarter in range(self.rank):
-        #     seen = set()
-        #     for row in range(quarter, quarter+self.rank):
-        #         for col in range(quarter+self.rank):
-        #             value = self.board[row][col]
-        #             if not value:
-        #                 continue
-        #             if value in seen:
-        #                 return False
-        #             seen.add(value)
-        # return True
 
 def recursive_backtracking(board):
-    next_cell = board.next_unassigned_cell()
-
-    if not next_cell:
+    if board.is_complete():
         return True
+
+    cell = board.select_unassigned_cell() # cell is tuple (row_idx, col_idx)
     
-    for i in range(board.rank**2):
-        domain_value = i+1
-        board.assign_cell(next_cell, domain_value)
-        if board.is_valid_cell(next_cell):
+    for value in board.get_domain_values_by_pos(cell):
+        if board.is_consistent(cell, value):
+            board.assign_cell(cell, value)
             if recursive_backtracking(board):
-                return True
- 
-        board.assign_cell(next_cell, 0)
+                return True # return Success
+
+        # remove var from assignment
+        board.unassign_cell(cell)
+    
+    # return Failure
     return False
 
-
 def backtracking(board):
-    return recursive_backtracking(board)
+    is_solved = recursive_backtracking(board)
+    if is_solved:
+        board.print()
+    else:
+        print("No solution found!!!") 
             
 def run():
     """
@@ -162,30 +140,26 @@ def run():
     4x4
     Enter the values (a blank is represented by a 0):
     2 0 0 0 3 1 4 0 0 0 0 1 0 2 0 0
+    The solution is
+    2 4 1 3 
+    3 1 4 2 
+    4 3 2 1 
+    1 2 3 4 
 
     9x9
     1 0 6 9 0 0 2 0 0 0 0 9 0 0 1 0 0 0 7 0 8 6 0 5 3 0 0 0 6 0 0 0 0 0 0 3 0 0 0 0 5 0 0 0 0 4 0 0 0 0 0 0 5 0 0 0 1 3 0 9 7 0 2 0 0 0 7 0 0 5 0 0 0 0 7 0 0 2 9 0 1
-
 
     16x16
     0 0 15 0 0 10 0 0 0 5 3 13 1 0 0 4 2 0 0 0 8 7 13 4 10 0 0 6 9 0 14 15 0 0 4 0 5 0 14 0 16 0 1 9 0 0 0 2 8 9 13 0 16 6 0 1 2 14 0 15 0 7 11 0 0 12 0 1 0 5 0 16 0 13 0 11 2 0 0 3 0 0 9 15 0 1 4 6 0 0 0 12 0 13 0 11 16 0 3 0 0 9 0 14 0 0 0 4 0 0 15 0 4 7 8 0 3 12 0 2 0 15 0 0 0 0 6 0 0 5 0 0 0 0 16 0 9 0 15 10 0 2 3 6 0 15 0 0 10 0 0 0 13 0 11 0 0 14 0 1 13 0 12 0 1 0 0 0 3 6 2 0 16 9 0 0 3 0 0 14 6 0 9 0 8 0 5 0 10 0 7 0 0 8 14 0 12 0 1 15 4 0 6 2 0 11 10 16 12 0 0 0 4 16 0 5 0 7 0 8 0 3 0 0 15 13 0 6 11 0 0 10 12 1 16 3 0 0 0 9 11 0 0 4 2 8 3 0 0 0 14 0 0 6 0 0
     """
     print("Welcome to the Sudoku Solver!")
-
     size = input("Enter a size (4x4, 9x9, 16x16):\n")
     values = input("Enter the values (a blank is represented by a 0):\n")
-    board = SudoKuBoard(size, values)
-
- 
-    board.pprint()
+    board = Sudoku(size, values)
+    # board.pprint()
     
     print("The solution is")
-    if backtracking(board):
-        board.pprint()
-    else:
-        print("no solution")
-        board.pprint()
-    
+    backtracking(board)
 
 if __name__ == "__main__":
     run()
