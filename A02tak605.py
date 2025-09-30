@@ -6,6 +6,9 @@ class Sudoku:
         self.state = state
         if domains is None:
             self.domains = [[[i for i in range(1, self.size+1)] for _ in range(self.size)] for _ in range(self.size)]
+            for r in range(self.size):
+                for c in range(self.size):
+                    self.domains[r][c] = [v for v in self.domains[r][c] if self.is_value_consistent((r,c), v)]
         else:
             self.domains = domains
 
@@ -40,33 +43,18 @@ class Sudoku:
     def assign_cell(self, cell, value):
         row, col = cell
         self.state[row][col] = value
+        self.domains[row][col] = [] # remove domain values for assinged cell
 
-    def unassign_cell(self, cell):
-        row, col = cell
-        self.state[row][col] = 0
+        ### forward checking
+        neighbours = self.get_neighbours(cell)
+        for neighbour in neighbours:
+            r,c = neighbour
+            # self.domains[r][c] = [ v for v in self.get_cell_legal_values((r,c)) if v != value]
+            self.domains[r][c] = [ v for v in self.domains[r][c] if v != value]
 
-    def legal_values(self, pos):
-        r,c = pos
-        return [v for v in self.domains[r][c] if self.is_consistent(pos, v)]
-    
-    def select_unassigned_cell(self):
-        """
-        MRV: choose an empty cell with the smallest number of legal values.
-        """
-        best = None
-        best_len = float("inf")
-        best_lv = []
-        for row in range(self.size):
-            for col in range(self.size):
-                if self.state[row][col] == 0:
-                    lv = self.legal_values((row, col))
-                    if len(lv) < best_len:
-                        best = (row, col)
-                        best_lv = lv
-                        best_len = len(lv)
-                        if best_len == 1:  # quick exit if only one choice
-                            return best, best_lv
-        return best, best_lv
+    def get_cell_legal_values(self, cell):
+        r,c = cell
+        return [v for v in self.domains[r][c] if self.is_value_consistent(cell, v)]
     
     def print(self):
         for row in range(self.size):
@@ -84,84 +72,77 @@ class Sudoku:
             print()
             print(f"-----" * self.size)
 
-    def get_value(self, pos):
-        row, col = pos
-        return self.state[row][col]
+    def is_value_consistent(self, cell, value):
+        r_idx, c_idx = cell
 
-    def get_row_values_by_pos(self,pos):
-        r_idx, c_idx = pos
-        return [ x for x in self.state[r_idx]]
-    
-    def get_col_values_by_pos(self, pos):
-        r_idx, c_idx = pos
-        values = []
+        # check if value is in cell's row
+        for v in self.state[r_idx]:
+            if v == value:
+                return False
+            
+        # check if value is in cell's column
         for row in self.state:
-            values.append(row[c_idx])
-        return values
-    
-    def get_region_values_by_pos(self, pos):
-        r_idx, c_idx = pos
-        values = []
+            if row[c_idx] == value:
+                return False
+
+        # check value is in region
         r_start = r_idx - r_idx % self.rank
         c_start = c_idx - c_idx % self.rank
         for r in range(r_start, r_start + self.rank):
             for c in range(c_start, c_start + self.rank):
-                values.append(self.state[r][c])
-        return values
+                if self.state[r][c] == value:
+                    return False
 
-    def is_consistent(self, pos, value):
-        for v in self.get_row_values_by_pos(pos):
-            if v == value:
-                return False
-            
-        for v in self.get_col_values_by_pos(pos):
-            if v == value:
-                return False
-            
-        for v in self.get_region_values_by_pos(pos):
-            if v == value:
-                return False
         
         return True
 
-    def get_neighours(self, pos):
-        r_idx,c_idx = pos
-
-        neighbours = []
+    def get_neighbours(self, cell):
+        r_idx,c_idx = cell
+        neighbours = set()
         for i in range(self.size):
             if i != r_idx: # get same column neighours
-                neighbours.append((i, c_idx)) 
+                neighbours.add((i, c_idx)) 
             if i != c_idx:
-                neighbours.append((r_idx,i))
+                neighbours.add((r_idx,i))
         r_start = r_idx - r_idx % self.rank
         c_start = c_idx - c_idx % self.rank
         for r in range(r_start, r_start + self.rank):
             for c in range(c_start, c_start + self.rank):
-                pos = (r,c)
-                if pos not in neighbours:
-                    neighbours.append((r,c))
-        return neighbours
+                neighbours.add((r,c))
+        neighbours.remove(cell)
+        return list(neighbours)
     
-def recursive_backtracking(board):
-    if board.is_complete():
-        return board
 
-    cell, legal_values = board.select_unassigned_cell() # cell is tuple (row_idx, col_idx)
-    
-    for value in legal_values:
-        board.assign_cell(cell, value)
-        result =  recursive_backtracking(board.deep_copy())
+class CSP:
+    def __init__(self, assignment, ordering_func):
+        self.initial_assignment = assignment
+        self.ordering_func = ordering_func 
+
+    def get_successors(self, assignment, cell, cell_values):
+        successors = []
+        for value in cell_values:
+            copied = assignment.deep_copy()
+            copied.assign_cell(cell, value)    
+            successors.append(copied)
+        return successors
+
+    def select_unassigned_cell(self, assignment):
+        return self.ordering_func(assignment)
+
+def recursive_backtracking(csp, assignment):
+    if assignment.is_complete():
+        return assignment
+
+    cell, cell_legal_values = csp.select_unassigned_cell(assignment) # cell is tuple (row_idx, col_idx)
+    for new_assignment in csp.get_successors(assignment, cell, cell_legal_values):
+        result = recursive_backtracking(csp, new_assignment)
         if result:
-            return result # return Success
-
-        # remove var from assignment
-        board.unassign_cell(cell)
-    
+            return result
     # return Failure
     return False
 
-def backtracking(board):
-    solved_board = recursive_backtracking(board)
+def backtracking(csp, assignment):
+    solved_board = recursive_backtracking(csp, assignment)
     if solved_board:
         print("The solution is")
         solved_board.print()
@@ -169,6 +150,27 @@ def backtracking(board):
     else:
         print("No solution found!!!") 
             
+def minium_remaining_values(assignment):
+    """
+    MRV: choose an empty cell with the smallest number of legal values.
+    """
+    best = None
+    best_len = float("inf")
+    best_lv = []
+    size = assignment.size
+    for row in range(size):
+        for col in range(size):
+            if assignment.state[row][col] == 0:
+                # lv = assignment.get_cell_legal_values((row, col))
+                lv = assignment.domains[row][col] # foward checking filter already for inconsistent values
+                if len(lv) < best_len:
+                    best = (row, col)
+                    best_lv = lv
+                    best_len = len(lv)
+                    if best_len == 1:  # quick exit if only one choice
+                        return best, best_lv
+    return best, best_lv
+
 def run():
     """
     Welcome to the Sudoku Solver!
@@ -198,26 +200,36 @@ def run():
         "9x9" : 3,
         "16x16" : 4
     }
-    values = input_values.split(" ")
-    state = []
-    rank = rank_map[input_size]
-    idx = 0
+
+    if input_size not in rank_map:
+        raise Exception("Invalid size, enter a size (4x4, 9x9, 16x16) ")
     
-    for _ in range(rank**2):
+    rank = rank_map[input_size]
+    size = rank**2
+    
+    splitted = str(input_values).strip().split(" ")
+    if len(splitted) != size * size:
+        raise Exception("Invalid input values")
+    
+    state = []
+    idx = 0
+    for _ in range(size):
         row = []
-        for _ in range(rank**2):
-            row.append(int(values[idx]))
+        for _ in range(size):
+            row.append(int(splitted[idx]))
             idx +=1
         state.append(row)
-    board = Sudoku(rank, state, domains=None)
-    # board.pprint()
-   
+    assignment = Sudoku(rank, state, domains=None)
+    csp = CSP(assignment, ordering_func=minium_remaining_values)
+    # print(assignment.get_neighbours((0,0)))
+    assignment.pprint()
+    
     start = time.perf_counter()
-    backtracking(board)
+    backtracking(csp, assignment)
     end = time.perf_counter()
 
 
-    print(f"Total time {end - start}")
+    print(f"Total run time =  {end - start}")
 
 if __name__ == "__main__":
     run()
