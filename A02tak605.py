@@ -150,7 +150,9 @@ def recursive_backtracking(board):
 def backtracking(board):
     is_solved = recursive_backtracking(board)
     if is_solved:
+        print("The solution is")
         board.print()
+        # board.pprint()
     else:
         print("No solution found!!!") 
             
@@ -179,10 +181,12 @@ def run():
     board = Sudoku(size, values)
     # board.pprint()
     
-    print("The solution is")
+   
     start = time.perf_counter()
     backtracking(board)
     end = time.perf_counter()
+
+
     print(f"Total time {end - start}")
 
 if __name__ == "__main__":
