@@ -1,4 +1,6 @@
 import time
+import unittest
+
 class Sudoku:
     def __init__(self, rank, state, domains=None):
         self.rank = rank
@@ -270,7 +272,87 @@ def run():
     end = time.perf_counter()
 
 
-    print(f"Total run time =  {end - start}")
+    # print(f"Total run time =  {end - start}")
+
+
+class TestSudokuSolver(unittest.TestCase):
+    def setUp(self):
+        self.puzzle4 = "2 0 0 0 3 1 4 0 0 0 0 1 0 2 0 0"
+        self.puzzle9 = "1 0 6 9 0 0 2 0 0 0 0 9 0 0 1 0 0 0 7 0 8 6 0 5 3 0 0 0 6 0 0 0 0 0 0 3 0 0 0 0 5 0 0 0 0 4 0 0 0 0 0 0 5 0 0 0 1 3 0 9 7 0 2 0 0 0 7 0 0 5 0 0 0 0 7 0 0 2 9 0 1"
+        self.puzzle16 = "0 0 15 0 0 10 0 0 0 5 3 13 1 0 0 4 2 0 0 0 8 7 13 4 10 0 0 6 9 0 14 15 0 0 4 0 5 0 14 0 16 0 1 9 0 0 0 2 8 9 13 0 16 6 0 1 2 14 0 15 0 7 11 0 0 12 0 1 0 5 0 16 0 13 0 11 2 0 0 3 0 0 9 15 0 1 4 6 0 0 0 12 0 13 0 11 16 0 3 0 0 9 0 14 0 0 0 4 0 0 15 0 4 7 8 0 3 12 0 2 0 15 0 0 0 0 6 0 0 5 0 0 0 0 16 0 9 0 15 10 0 2 3 6 0 15 0 0 10 0 0 0 13 0 11 0 0 14 0 1 13 0 12 0 1 0 0 0 3 6 2 0 16 9 0 0 3 0 0 14 6 0 9 0 8 0 5 0 10 0 7 0 0 8 14 0 12 0 1 15 4 0 6 2 0 11 10 16 12 0 0 0 4 16 0 5 0 7 0 8 0 3 0 0 15 13 0 6 11 0 0 10 12 1 16 3 0 0 0 9 11 0 0 4 2 8 3 0 0 0 14 0 0 6 0 0"
+
+    def _parse_state(self, rank, values):
+        size = rank**2
+        splitted = str(values).strip().split(" ")
+        if len(splitted) != size * size:
+            raise Exception("Invalid input values")
+        
+        state = []
+        idx = 0
+        for _ in range(size):
+            row = []
+            for _ in range(size):
+                row.append(int(splitted[idx]))
+                idx +=1
+            state.append(row)
+        return state
+
+    def _solve(self, rank, values, timeout=2.0):
+        state = self._parse_state(rank, values)
+        assignment = Sudoku(rank, state, domains=None)
+        csp = CSP(assignment, ordering_func=minium_remaining_values, filtering_func=forward_checking)
+
+        t0 = time.perf_counter()
+        solved = recursive_backtracking(csp, assignment)
+        dt = time.perf_counter() - t0
+        print(f"test {rank**2}x{rank**2} runtime", dt)
+        self.assertIsNotNone(solved, "Solver returned None")
+        self.assertLessEqual(dt, timeout, f"Solver took too long: {dt:.2f}s")
+        return solved.state
+
+    def _verify(self, initial, solved, rank):
+        n = rank * rank
+        allvals = list(range(1, n+1))
+        # check filled
+        for r in range(n):
+            for c in range(n):
+                self.assertNotEqual(solved[r][c], 0, f"Cell ({r},{c}) empty")
+                if initial[r][c] != 0:
+                    self.assertEqual(solved[r][c], initial[r][c], f"Clue changed at ({r},{c})")
+        # check rows
+        for r in range(n):
+            self.assertEqual(sorted(solved[r]), allvals)
+        # check cols
+        for c in range(n):
+            col = [solved[r][c] for r in range(n)]
+            self.assertEqual(sorted(col), allvals)
+        # check regions
+        for br in range(0, n, rank):
+            for bc in range(0, n, rank):
+                box = []
+                for r in range(br, br+rank):
+                    box.extend(solved[r][bc:bc+rank])
+                self.assertEqual(sorted(box), allvals)
+
+    def test_4x4(self):
+        rank = 2
+        init = self._parse_state(rank, self.puzzle4)
+        solved = self._solve(rank, self.puzzle4, timeout=5.0)
+        self._verify(init, solved, rank)
+
+    def test_9x9(self):
+        rank = 3
+        init = self._parse_state(rank, self.puzzle9)
+        solved = self._solve(rank, self.puzzle9, timeout=5.0)
+        self._verify(init, solved, rank)
+
+    def test_16x16(self):
+        rank = 4
+        init = self._parse_state(rank, self.puzzle16)
+        solved = self._solve(rank, self.puzzle16, timeout=5.0)
+        self._verify(init, solved, rank)
+
+
 
 if __name__ == "__main__":
     run()
