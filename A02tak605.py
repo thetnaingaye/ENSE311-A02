@@ -8,7 +8,10 @@ class Sudoku:
             self.domains = [[[i for i in range(1, self.size+1)] for _ in range(self.size)] for _ in range(self.size)]
             for r in range(self.size):
                 for c in range(self.size):
-                    self.domains[r][c] = [v for v in self.domains[r][c] if self.is_value_consistent((r,c), v)]
+                    if self.state[r][c] == 0:
+                        self.domains[r][c] = [v for v in self.domains[r][c] if self.is_value_consistent((r,c), v)]
+                    else:
+                        self.domains[r][c] = [self.state[r][c]] # uni constraint
         else:
             self.domains = domains
 
@@ -43,6 +46,7 @@ class Sudoku:
     def assign_cell(self, cell, value):
         row, col = cell
         self.state[row][col] = value
+        self.domains[row][col] = [value]
 
     def get_cell_legal_values(self, cell):
         r,c = cell
@@ -115,8 +119,8 @@ class CSP:
         for value in cell_values:
             copied_assgn = assignment.deep_copy()
             copied_assgn.assign_cell(cell, value)
-            self.filtering_func(copied_assgn, cell, value) # filtering Forward checking or AC-3
-            successors.append(copied_assgn)
+            if self.filtering_func(copied_assgn, cell, value): # filtering Forward checking or AC-3
+                successors.append(copied_assgn)
         return successors
 
     def select_unassigned_cell(self, assignment):
@@ -154,9 +158,12 @@ def arc_consistency_3(assignment, cell, value):
         head, tail = arc_queue.pop(0)
         tr, tc = tail
         if remove_inconsistent_values(assignment, head, tail):
+            if len(assignment.domains[tr][tc]) == 0:
+                return False
             for neighbour in assignment.get_neighbours((tr,tc)):
                 if assignment.state[neighbour[0]][neighbour[1]] != 0:
                     arc_queue.append((tail, neighbour))
+    return True
 
 def forward_checking(assignment, cell, value):
     """
@@ -167,6 +174,9 @@ def forward_checking(assignment, cell, value):
         r,c = neighbour
         # self.domains[r][c] = [ v for v in self.get_cell_legal_values((r,c)) if v != value]
         assignment.domains[r][c] = [ v for v in assignment.domains[r][c] if v != value]
+        if len(assignment.domains[r][c]) == 0: # check unassigned cell with empty domain values, early fail
+            return False
+    return True
 
 def minium_remaining_values(assignment):
     """
