@@ -43,14 +43,6 @@ class Sudoku:
     def assign_cell(self, cell, value):
         row, col = cell
         self.state[row][col] = value
-        self.domains[row][col] = [] # remove domain values for assinged cell
-
-        ### forward checking
-        neighbours = self.get_neighbours(cell)
-        for neighbour in neighbours:
-            r,c = neighbour
-            # self.domains[r][c] = [ v for v in self.get_cell_legal_values((r,c)) if v != value]
-            self.domains[r][c] = [ v for v in self.domains[r][c] if v != value]
 
     def get_cell_legal_values(self, cell):
         r,c = cell
@@ -112,22 +104,90 @@ class Sudoku:
         neighbours.remove(cell)
         return list(neighbours)
     
-
 class CSP:
-    def __init__(self, assignment, ordering_func):
+    def __init__(self, assignment, ordering_func, filtering_func):
         self.initial_assignment = assignment
-        self.ordering_func = ordering_func 
+        self.ordering_func = ordering_func
+        self.filtering_func = filtering_func
 
     def get_successors(self, assignment, cell, cell_values):
         successors = []
         for value in cell_values:
-            copied = assignment.deep_copy()
-            copied.assign_cell(cell, value)    
-            successors.append(copied)
+            copied_assgn = assignment.deep_copy()
+            copied_assgn.assign_cell(cell, value)
+            self.filtering_func(copied_assgn, cell, value) # filtering Forward checking or AC-3
+            successors.append(copied_assgn)
         return successors
 
     def select_unassigned_cell(self, assignment):
         return self.ordering_func(assignment)
+
+def arc_consistency_3(assignment, cell, value):
+    """
+    ac-3 arc consistency: constraint propagation assigned to unassigned and propagates usassigned to unassigned
+    """
+    def remove_inconsistent_values(assignment, head, tail):
+        """
+        Removes inconsistent values from the tail that do not agree with values in the head.
+        """
+        removed = False
+
+        hr, hc = head
+        tr, tc = tail
+
+        possible_tail_values = assignment.domains[tr][tc]
+        possible_head_values = assignment.domains[hr][hc]
+
+        if len(possible_head_values) == 1 and (possible_head_values[0] in possible_tail_values):
+            possible_tail_values.remove(possible_head_values[0])
+            removed = True
+        return removed
+
+    row, col = cell
+    assignment.domains[row][col] = [value] 
+    neighbours = assignment.get_neighbours(cell)
+    arc_queue = []
+    for neighbour in neighbours:
+        arc_queue.append((cell, neighbour))
+
+    while len(arc_queue) > 0:
+        head, tail = arc_queue.pop(0)
+        tr, tc = tail
+        if remove_inconsistent_values(assignment, head, tail):
+            for neighbour in assignment.get_neighbours((tr,tc)):
+                if assignment.state[neighbour[0]][neighbour[1]] != 0:
+                    arc_queue.append((tail, neighbour))
+
+def forward_checking(assignment, cell, value):
+    """
+    Forward checking: constraint propagation from assigned to unassigned variables
+    """
+    neighbours = assignment.get_neighbours(cell)
+    for neighbour in neighbours:
+        r,c = neighbour
+        # self.domains[r][c] = [ v for v in self.get_cell_legal_values((r,c)) if v != value]
+        assignment.domains[r][c] = [ v for v in assignment.domains[r][c] if v != value]
+
+def minium_remaining_values(assignment):
+    """
+    MRV: choose an empty cell with the smallest number of legal values.
+    """
+    best = None
+    best_len = float("inf")
+    best_lv = []
+    size = assignment.size
+    for row in range(size):
+        for col in range(size):
+            if assignment.state[row][col] == 0:
+                # lv = assignment.get_cell_legal_values((row, col))
+                lv = assignment.domains[row][col] # foward checking filter already for inconsistent values
+                if len(lv) < best_len:
+                    best = (row, col)
+                    best_lv = lv
+                    best_len = len(lv)
+                    if best_len == 1:  # quick exit if only one choice
+                        return best, best_lv
+    return best, best_lv
 
 def recursive_backtracking(csp, assignment):
     if assignment.is_complete():
@@ -150,27 +210,6 @@ def backtracking(csp, assignment):
     else:
         print("No solution found!!!") 
             
-def minium_remaining_values(assignment):
-    """
-    MRV: choose an empty cell with the smallest number of legal values.
-    """
-    best = None
-    best_len = float("inf")
-    best_lv = []
-    size = assignment.size
-    for row in range(size):
-        for col in range(size):
-            if assignment.state[row][col] == 0:
-                # lv = assignment.get_cell_legal_values((row, col))
-                lv = assignment.domains[row][col] # foward checking filter already for inconsistent values
-                if len(lv) < best_len:
-                    best = (row, col)
-                    best_lv = lv
-                    best_len = len(lv)
-                    if best_len == 1:  # quick exit if only one choice
-                        return best, best_lv
-    return best, best_lv
-
 def run():
     """
     Welcome to the Sudoku Solver!
@@ -193,7 +232,6 @@ def run():
     print("Welcome to the Sudoku Solver!")
     input_size = input("Enter a size (4x4, 9x9, 16x16):\n")
     input_values = input("Enter the values (a blank is represented by a 0):\n")
-
 
     rank_map = {
         "4x4" : 2,
@@ -220,16 +258,15 @@ def run():
             idx +=1
         state.append(row)
     assignment = Sudoku(rank, state, domains=None)
-    csp = CSP(assignment, ordering_func=minium_remaining_values)
-    # print(assignment.get_neighbours((0,0)))
-    assignment.pprint()
+    csp = CSP(assignment, ordering_func=minium_remaining_values, filtering_func=forward_checking)
+    # assignment.pprint()
     
     start = time.perf_counter()
     backtracking(csp, assignment)
     end = time.perf_counter()
 
 
-    print(f"Total run time =  {end - start}")
+    # print(f"Total run time =  {end - start}")
 
 if __name__ == "__main__":
     run()
