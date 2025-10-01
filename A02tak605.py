@@ -14,24 +14,13 @@ class Sudoku:
                         self.domains[r][c] = [self.state[r][c]] # uni constraint
         else:
             self.domains = domains
-
-    def get_state(self):
-        copy_state = []
-        for row in self.state:
-            copy_state.append(list(row))
-        return copy_state
-    
-    def get_domains(self):
-        values = []
-        for row in self.domains:
-            value_row=[]
-            for col in row:
-                value_row.append(list(col))
-            values.append(value_row)
-        return values
     
     def deep_copy(self):
-        return Sudoku(self.rank, self.get_state(), self.get_domains())
+        return Sudoku(
+            self.rank,
+            [row[:] for row in self.state], # create new state list
+            [[d[:] for d in row] for row in self.domains], # create new domains list
+        )
     
     def is_complete(self):
         return not self.has_unassinged_cell()
@@ -169,13 +158,18 @@ def forward_checking(assignment, cell, value):
     """
     Forward checking: constraint propagation from assigned to unassigned variables
     """
-    neighbours = assignment.get_neighbours(cell)
-    for neighbour in neighbours:
-        r,c = neighbour
-        # self.domains[r][c] = [ v for v in self.get_cell_legal_values((r,c)) if v != value]
-        assignment.domains[r][c] = [ v for v in assignment.domains[r][c] if v != value]
-        if len(assignment.domains[r][c]) == 0: # check unassigned cell with empty domain values, early fail
+    for (r, c) in assignment.get_neighbours(cell):
+        if assignment.state[r][c] != 0:
+            continue
+        d = assignment.domains[r][c]
+        # If removing `value` would empty the domain, fail fast
+        if len(d) == 1 and d[0] == value:
             return False
+        # In-place remove avoids allocating a new list
+        if value in d:
+            d.remove(value)
+            if not d:  # just in case
+                return False
     return True
 
 def minium_remaining_values(assignment):
@@ -276,7 +270,7 @@ def run():
     end = time.perf_counter()
 
 
-    # print(f"Total run time =  {end - start}")
+    print(f"Total run time =  {end - start}")
 
 if __name__ == "__main__":
     run()
