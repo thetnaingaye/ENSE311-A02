@@ -2,7 +2,7 @@ import time
 import unittest
 
 class Sudoku:
-    def __init__(self, rank, state, domains=None):
+    def __init__(self, rank, state, domains=None, neighbours=None):
         self.rank = rank
         self.size = self.rank**2
         self.state = state
@@ -16,12 +16,33 @@ class Sudoku:
                         self.domains[r][c] = [self.state[r][c]] # uni constraint
         else:
             self.domains = domains
+
+        if neighbours is None:
+            self._neighbours = {}
+            for r_idx in range(self.size):
+                for c_idx in range(self.size):
+                    neighbours = set()
+                    for i in range(self.size):
+                        if i != r_idx: # get same column neighours
+                            neighbours.add((i, c_idx)) 
+                        if i != c_idx:
+                            neighbours.add((r_idx,i))
+                    r_start = r_idx - r_idx % self.rank
+                    c_start = c_idx - c_idx % self.rank
+                    for r in range(r_start, r_start + self.rank):
+                        for c in range(c_start, c_start + self.rank):
+                            neighbours.add((r,c))
+                    neighbours.remove((r_idx,c_idx))
+                    self._neighbours[(r_idx,c_idx)] = list(neighbours)
+        else:
+            self._neighbours = neighbours
     
     def deep_copy(self):
         return Sudoku(
             self.rank,
             [row[:] for row in self.state], # create new state list
             [[d[:] for d in row] for row in self.domains], # create new domains list
+            self._neighbours # pass neighbours obj
         )
     
     def is_complete(self):
@@ -84,20 +105,7 @@ class Sudoku:
         return True
 
     def get_neighbours(self, cell):
-        r_idx,c_idx = cell
-        neighbours = set()
-        for i in range(self.size):
-            if i != r_idx: # get same column neighours
-                neighbours.add((i, c_idx)) 
-            if i != c_idx:
-                neighbours.add((r_idx,i))
-        r_start = r_idx - r_idx % self.rank
-        c_start = c_idx - c_idx % self.rank
-        for r in range(r_start, r_start + self.rank):
-            for c in range(c_start, c_start + self.rank):
-                neighbours.add((r,c))
-        neighbours.remove(cell)
-        return list(neighbours)
+        return self._neighbours[cell]
     
 class CSP:
     def __init__(self, assignment, ordering_func, filtering_func):
@@ -263,7 +271,7 @@ def run():
             row.append(int(splitted[idx]))
             idx +=1
         state.append(row)
-    assignment = Sudoku(rank, state, domains=None)
+    assignment = Sudoku(rank, state)
     csp = CSP(assignment, ordering_func=minium_remaining_values, filtering_func=forward_checking)
     # assignment.pprint()
     
