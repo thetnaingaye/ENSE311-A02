@@ -1,5 +1,7 @@
 import time
 import unittest
+from collections import deque 
+
 
 class Sudoku:
     def __init__(self, rank, state, domains=None, neighbours=None):
@@ -42,7 +44,7 @@ class Sudoku:
             self.rank,
             [row[:] for row in self.state], # create new state list
             [[d[:] for d in row] for row in self.domains], # create new domains list
-            self._neighbours # pass neighbours obj
+            dict(self._neighbours) # pass neighbours obj
         )
     
     def is_complete(self):
@@ -118,56 +120,63 @@ class CSP:
         for value in cell_values:
             copied_assgn = assignment.deep_copy()
             copied_assgn.assign_cell(cell, value)
-            if self.filtering_func(copied_assgn, cell, value): # filtering Forward checking or AC-3
+            if self.filtering_func(copied_assgn, cell): # filtering Forward checking or AC-3
                 successors.append(copied_assgn)
         return successors
 
     def select_unassigned_cell(self, assignment):
         return self.ordering_func(assignment)
 
-def arc_consistency_3(assignment, cell, value):
+def remove_inconsistent_values(assignment, head, tail):
     """
-    ac-3 arc consistency: constraint propagation assigned to unassigned and propagates usassigned to unassigned
+    Remove values from the tail domain that have no supporting value in the head domain.
     """
-    def remove_inconsistent_values(assignment, head, tail):
-        """
-        Removes inconsistent values from the tail that do not agree with values in the head.
-        """
-        removed = False
+    hr, hc = head
+    tr, tc = tail
 
-        hr, hc = head
-        tr, tc = tail
+    head_domain = assignment.domains[hr][hc]
+    tail_domain = assignment.domains[tr][tc]
 
-        possible_tail_values = assignment.domains[tr][tc]
-        possible_head_values = assignment.domains[hr][hc]
+    if len(head_domain) != 1:
+        return False
 
-        if len(possible_head_values) == 1 and (possible_head_values[0] in possible_tail_values):
-            possible_tail_values.remove(possible_head_values[0])
-            removed = True
-        return removed
+    head_value = head_domain[0]
+    if head_value in tail_domain:
+        tail_domain.remove(head_value)
+        return True
+    return False
 
-    row, col = cell
-    assignment.domains[row][col] = [value] 
-    neighbours = assignment.get_neighbours(cell)
-    arc_queue = []
-    for neighbour in neighbours:
-        arc_queue.append((cell, neighbour))
 
-    while len(arc_queue) > 0:
-        head, tail = arc_queue.pop(0)
-        tr, tc = tail
+
+def arc_consistency_3(assignment, cell):
+    arc_queue = deque()
+
+    for neighbour in assignment.get_neighbours(cell):
+        r,c = neighbour
+        if assignment.state[r][c] == 0:
+            arc = (cell, neighbour)
+            arc_queue.append(arc)
+
+    while arc_queue:
+        head, tail = arc_queue.popleft()
+
         if remove_inconsistent_values(assignment, head, tail):
-            if len(assignment.domains[tr][tc]) == 0:
+            tr, tc = tail
+            tail_domain = assignment.domains[tr][tc]
+            if not tail_domain:
                 return False
-            for neighbour in assignment.get_neighbours((tr,tc)):
-                if assignment.state[neighbour[0]][neighbour[1]] != 0:
-                    arc_queue.append((tail, neighbour))
+            if len(tail_domain) == 1:
+                for neighbour in assignment.get_neighbours(tail):
+                    if neighbour != head:
+                        arc_queue.append((tail, neighbour))
     return True
 
-def forward_checking(assignment, cell, value):
+def forward_checking(assignment, cell):
     """
     Forward checking: constraint propagation from assigned to unassigned variables
     """
+    cell_r, cell_c = cell
+    value = assignment.state[cell_r][cell_c]
     for (r, c) in assignment.get_neighbours(cell):
         if assignment.state[r][c] != 0:
             continue
@@ -272,7 +281,8 @@ def run():
             idx +=1
         state.append(row)
     assignment = Sudoku(rank, state)
-    csp = CSP(assignment, ordering_func=minium_remaining_values, filtering_func=forward_checking)
+    # csp = CSP(assignment, ordering_func=minium_remaining_values, filtering_func=forward_checking)
+    csp = CSP(assignment, ordering_func=minium_remaining_values, filtering_func=arc_consistency_3)
     # assignment.pprint()
     
     start = time.perf_counter()
@@ -308,7 +318,7 @@ class TestSudokuSolver(unittest.TestCase):
     def _solve(self, rank, values, timeout=2.0):
         state = self._parse_state(rank, values)
         assignment = Sudoku(rank, state, domains=None)
-        csp = CSP(assignment, ordering_func=minium_remaining_values, filtering_func=forward_checking)
+        csp = CSP(assignment, ordering_func=minium_remaining_values, filtering_func=arc_consistency_3)
 
         t0 = time.perf_counter()
         solved = recursive_backtracking(csp, assignment)
