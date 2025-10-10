@@ -280,6 +280,12 @@ def run():
             row.append(int(splitted[idx]))
             idx +=1
         state.append(row)
+
+    ok, msg = validate_puzzle(state, rank)
+    if not ok:
+        print(f"Invalid puzzle: {msg}")
+        return
+
     assignment = Sudoku(rank, state)
     # csp = CSP(assignment, ordering_func=minium_remaining_values, filtering_func=forward_checking)
     csp = CSP(assignment, ordering_func=minium_remaining_values, filtering_func=arc_consistency_3)
@@ -292,6 +298,57 @@ def run():
 
     # print(f"Total run time =  {end - start}")
 
+def validate_puzzle(state, rank):
+    """
+    state: list[list[int]] with 0 for blanks
+    rank: 2 for 4x4, 3 for 9x9, 4 for 16x16
+    """
+    n = rank * rank
+
+    # 1) shape
+    if len(state) != n or any(len(row) != n for row in state):
+        return False, f"wrong shape: expected {n}x{n}"
+
+    # 2) value range
+    for r, row in enumerate(state):
+        for c, v in enumerate(row):
+            if not (0 <= v <= n):
+                return False, f"out of range at (r{r+1},c{c+1}): {v}"
+
+    # 3) duplicates in rows
+    for r in range(n):
+        seen = set()
+        for v in state[r]:
+            if v == 0: 
+                continue
+            if v in seen:
+                return False, f"row {r+1} duplicate {v}"
+            seen.add(v)
+
+    # 4) duplicates in cols
+    for c in range(n):
+        seen = set()
+        for r in range(n):
+            v = state[r][c]
+            if v == 0:
+                continue
+            if v in seen:
+                return False, f"col {c+1} duplicate {v}"
+            seen.add(v)
+
+    # 5) duplicates in boxes
+    for br in range(0, n, rank):
+        for bc in range(0, n, rank):
+            seen = set()
+            for r in range(br, br + rank):
+                for c in range(bc, bc + rank):
+                    v = state[r][c]
+                    if v == 0:
+                        continue
+                    if v in seen:
+                        return False, f"box ({br//rank+1},{bc//rank+1}) duplicate {v}"
+                    seen.add(v)
+    return True, "ok"
 
 class TestSudokuSolver(unittest.TestCase):
     def setUp(self):
